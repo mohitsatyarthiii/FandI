@@ -5,23 +5,28 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // ==================== CORS ALLOWED ORIGINS ====================
-// ⚠️ IMPORTANT: URLs ke end me SLASH (/) MAT DALO
 const allowedOrigins = [
-  'https://symphonious-entremet-a55135.netlify.app', // <-- No slash at end
-  'http://localhost:5173'
+  'https://symphonious-entremet-a55135.netlify.app',  // <-- Netlify frontend
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://fandi.onrender.com'  // <-- Self URL bhi add karo
 ];
 
-// Add from environment variables
+// Add from env if exists
 if (process.env.CLIENT_URL) {
-  // Remove trailing slash if present
   const cleanUrl = process.env.CLIENT_URL.replace(/\/$/, '');
-  allowedOrigins.push(cleanUrl);
+  if (!allowedOrigins.includes(cleanUrl)) {
+    allowedOrigins.push(cleanUrl);
+  }
 }
 
 if (process.env.ADDITIONAL_ORIGINS) {
   process.env.ADDITIONAL_ORIGINS.split(',').forEach(origin => {
     const cleanOrigin = origin.trim().replace(/\/$/, '');
-    if (cleanOrigin) allowedOrigins.push(cleanOrigin);
+    if (cleanOrigin && !allowedOrigins.includes(cleanOrigin)) {
+      allowedOrigins.push(cleanOrigin);
+    }
   });
 }
 
@@ -29,45 +34,38 @@ if (process.env.ADDITIONAL_ORIGINS) {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // Allow requests with no origin (like mobile apps, Postman, curl)
-  if (!origin) {
-    return next();
-  }
-
-  // Check if origin is allowed
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  // 🔥 IMPORTANT: Preflight request ke liye ALWAYS headers bhejo
+  if (req.method === 'OPTIONS') {
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', 'https://symphonious-entremet-a55135.netlify.app');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-  } else {
-    // Log rejected origins for debugging
-    console.warn(`🚫 CORS blocked origin: ${origin}`);
-    console.warn(`   Allowed origins: ${allowedOrigins.join(', ')}`);
-  }
-
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Max-Age', '86400');
     return res.status(200).end();
   }
   
+  // Normal requests
+  if (origin) {
+    if (allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else {
+      // Default fallback for Netlify
+      res.setHeader('Access-Control-Allow-Origin', 'https://symphonious-entremet-a55135.netlify.app');
+      console.warn(`⚠️ Origin not in allowed list: ${origin}`);
+    }
+  }
+  
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
   next();
 });
-
-// ==================== DEBUG ENDPOINT (Remove in production) ====================
-if (process.env.NODE_ENV !== 'production') {
-  app.get('/debug-cors', (req, res) => {
-    res.json({
-      origin: req.headers.origin,
-      allowedOrigins,
-      env: {
-        client_url: process.env.CLIENT_URL,
-        node_env: process.env.NODE_ENV
-      }
-    });
-  });
-}
 
 // ==================== ENVIRONMENT CHECK ====================
 const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET'];
@@ -94,8 +92,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 Environment:    ${NODE_ENV}`);
   console.log(`🔌 Port:           ${PORT}`);
   console.log(`🌍 Host:           0.0.0.0`);
-  console.log(`📚 API Base:       http://localhost:${PORT}/api`);
-  console.log(`❤️  Health:         http://localhost:${PORT}/health`);
   console.log(`\n🌐 CORS ALLOWED ORIGINS:`);
   allowedOrigins.forEach((origin, index) => {
     console.log(`   ${index + 1}. ${origin}`);
@@ -103,59 +99,44 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(60) + '\n');
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    environment: NODE_ENV,
+    timestamp: new Date().toISOString(),
+    cors: {
+      allowedOrigins,
+      currentOrigin: req.headers.origin || 'none'
+    }
+  });
+});
+
 // ==================== ERROR HANDLERS ====================
 process.on('uncaughtException', (error) => {
-  console.error('\n❌ UNCAUGHT EXCEPTION:');
-  console.error(`   Error: ${error.message}`);
-  console.error(`   Stack: ${error.stack}`);
-  
+  console.error('\n❌ UNCAUGHT EXCEPTION:', error.message);
   if (isProduction) {
-    console.log('\n🔄 Graceful shutdown initiated...');
-    server.close(() => {
-      console.log('✅ Server closed');
-      process.exit(1);
-    });
-    
-    setTimeout(() => {
-      console.error('❌ Force shutdown');
-      process.exit(1);
-    }, 5000);
+    server.close(() => process.exit(1));
+    setTimeout(() => process.exit(1), 5000);
   }
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('\n❌ UNHANDLED REJECTION:');
-  console.error(`   Reason: ${reason}`);
-  console.error(`   Promise: ${promise}`);
-  
+process.on('unhandledRejection', (reason) => {
+  console.error('\n❌ UNHANDLED REJECTION:', reason);
   if (isProduction) {
-    console.log('\n🔄 Graceful shutdown initiated...');
-    server.close(() => {
-      console.log('✅ Server closed');
-      process.exit(1);
-    });
-    
-    setTimeout(() => {
-      console.error('❌ Force shutdown');
-      process.exit(1);
-    }, 5000);
+    server.close(() => process.exit(1));
+    setTimeout(() => process.exit(1), 5000);
   }
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n🛑 SIGTERM received, closing server gracefully...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+  console.log('\n🛑 SIGTERM received, closing server...');
+  server.close(() => process.exit(0));
 });
 
 process.on('SIGINT', () => {
-  console.log('\n🛑 SIGINT received, closing server gracefully...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+  console.log('\n🛑 SIGINT received, closing server...');
+  server.close(() => process.exit(0));
 });
 
 export { app, server, allowedOrigins };
