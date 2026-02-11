@@ -60,7 +60,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         {sidebarOpen ? (
           <div className="flex items-center gap-2">
             <Briefcase className="h-8 w-8 text-indigo-600" />
-            <span className="font-bold text-lg text-gray-800">StaffFlow</span>
+            <span className="font-bold text-lg text-gray-800">F & I</span>
           </div>
         ) : (
           <Briefcase className="h-8 w-8 text-indigo-600 mx-auto" />
