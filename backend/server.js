@@ -6,7 +6,7 @@ dotenv.config();
 
 // ==================== CORS ALLOWED ORIGINS ====================
 const allowedOrigins = [
-  's',
+  'https://symphonious-entremet-a55135.netlify.app/',
   'http://localhost:5173'
 ];
 
