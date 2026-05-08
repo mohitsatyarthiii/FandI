@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'https://fandi.onrender.com';
+const API_URL = 'http://localhost:5000/api';
 
 console.log('🌐 API URL:', API_URL);
 
@@ -114,6 +114,11 @@ export const getTaskStatsAPI = () =>
 
 export const getTasksAssignedByMeAPI = (params) =>
   axiosInstance.get('/tasks/assigned-by-me', { params });
+
+// Add this to your axios.js file
+export const retryNotificationsAPI = (taskId) => {
+  return axiosInstance.post(`/tasks/${taskId}/retry-notifications`);
+};
 
 
 

@@ -1,95 +1,211 @@
-import { Calendar, User, Flag, Clock, AlertCircle, CheckCircle } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import React from 'react';
+import { 
+  Calendar, 
+  User, 
+  MapPin, 
+  Flag, 
+  Clock,
+  ChevronRight,
+  Bell,
+  AlertCircle,
+  MessageSquare,
+  Smartphone
+} from 'lucide-react';
 
-const TaskCard = ({ task, onView, onUpdateStatus }) => {
-  const priorityColors = {
-    low: 'bg-gray-100 text-gray-800',
-    medium: 'bg-blue-100 text-blue-800',
-    high: 'bg-orange-100 text-orange-800',
-    urgent: 'bg-red-100 text-red-800'
+const TaskCard = ({ 
+  task, 
+  onView, 
+  onUpdateStatus, 
+  onEdit, 
+  onViewNotifications,
+  onRetryNotifications 
+}) => {
+  const getPriorityColor = (priority) => {
+    switch(priority) {
+      case 'urgent': return 'bg-red-100 text-red-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'medium': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
   };
 
-  const statusColors = {
-    pending: 'bg-gray-100 text-gray-800',
-    'in-progress': 'bg-yellow-100 text-yellow-800',
-    completed: 'bg-green-100 text-green-800',
-    'on-hold': 'bg-purple-100 text-purple-800',
-    cancelled: 'bg-red-100 text-red-800'
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'in-progress': return 'bg-yellow-100 text-yellow-800';
+      case 'pending': return 'bg-gray-100 text-gray-800';
+      case 'on-hold': return 'bg-purple-100 text-purple-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
   };
 
-  const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'completed';
+  const isOverdue = task.isOverdue || (task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'completed');
+
+  // Check notification status
+  const hasNotificationIssues = task.notificationStatus && (
+    !task.notificationStatus.staff?.whatsapp ||
+    !task.notificationStatus.staff?.sms ||
+    (task.entryId && (
+      !task.notificationStatus.customer?.whatsapp ||
+      !task.notificationStatus.customer?.sms
+    ))
+  );
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
       <div className="p-5">
-        {/* Header */}
+        {/* Header with priority and status */}
         <div className="flex items-start justify-between mb-3">
-          <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-lg ${isOverdue ? 'bg-red-50' : 'bg-blue-50'}`}>
-              <Flag size={18} className={isOverdue ? 'text-red-600' : 'text-blue-600'} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">{task.title}</h3>
-              <p className="text-xs text-gray-500 capitalize">{task.category}</p>
-            </div>
-          </div>
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-1 rounded-full capitalize ${priorityColors[task.priority]}`}>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getPriorityColor(task.priority)}`}>
               {task.priority}
             </span>
-            <span className={`text-xs px-2 py-1 rounded-full capitalize ${statusColors[task.status]}`}>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getStatusColor(task.status)}`}>
               {task.status}
             </span>
           </div>
-        </div>
-
-        {/* Description */}
-        <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-          {task.description}
-        </p>
-
-        {/* Task Info */}
-        <div className="space-y-2 mb-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <User size={14} className="text-gray-400" />
-            <span>Assigned to: <span className="font-medium">{task.assignedTo?.name}</span></span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Calendar size={14} className="text-gray-400" />
-            <span className={isOverdue ? 'text-red-600 font-medium' : ''}>
-              Due: {format(new Date(task.dueDate), 'dd MMM yyyy')}
-              {isOverdue && ' (Overdue)'}
-            </span>
-          </div>
-          {task.progress > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-indigo-600 rounded-full"
-                  style={{ width: `${task.progress}%` }}
-                />
-              </div>
-              <span className="text-xs text-gray-600">{task.progress}%</span>
+          
+          {/* Notification indicator */}
+          {task.notificationStatus && (
+            <div className="flex items-center gap-1">
+              {task.notificationStatus.staff?.whatsapp && task.notificationStatus.staff?.sms ? (
+                <div className="flex items-center gap-1 text-green-600" title="Staff notifications sent">
+                  <MessageSquare size={14} />
+                  <Smartphone size={14} />
+                </div>
+              ) : (
+                <button 
+                  onClick={() => onRetryNotifications?.()}
+                  className="text-yellow-600 hover:text-yellow-800"
+                  title="Some notifications failed - click to retry"
+                >
+                  <AlertCircle size={16} />
+                </button>
+              )}
+              
+              {task.entryId && (
+                <>
+                  {task.notificationStatus.customer?.whatsapp && task.notificationStatus.customer?.sms ? (
+                    <div className="flex items-center gap-1 text-green-600 ml-1 pl-1 border-l" title="Customer notifications sent">
+                      <MessageSquare size={14} />
+                      <Smartphone size={14} />
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => onRetryNotifications?.()}
+                      className="text-yellow-600 hover:text-yellow-800 ml-1 pl-1 border-l"
+                      title="Customer notifications pending/failed"
+                    >
+                      <AlertCircle size={16} />
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+        {/* Title */}
+        <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
+          {task.title}
+        </h3>
+
+        {/* Description preview */}
+        <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+          {task.description}
+        </p>
+
+        {/* Details grid */}
+        <div className="space-y-2 mb-4">
+          {task.assignedTo && (
+            <div className="flex items-center text-sm text-gray-600">
+              <User size={16} className="mr-2 text-gray-400" />
+              <span className="truncate">{task.assignedTo.name}</span>
+            </div>
+          )}
+          
+          {task.location && (
+            <div className="flex items-center text-sm text-gray-600">
+              <MapPin size={16} className="mr-2 text-gray-400" />
+              <span className="capitalize">{task.location}</span>
+            </div>
+          )}
+          
+          {task.dueDate && (
+            <div className="flex items-center text-sm">
+              <Calendar size={16} className="mr-2 text-gray-400" />
+              <span className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                {new Date(task.dueDate).toLocaleDateString()}
+                {isOverdue && ' (Overdue)'}
+              </span>
+            </div>
+          )}
+
+          {/* Customer info if exists */}
+          {task.entryId && (
+            <div className="flex items-center text-sm text-indigo-600">
+              <Flag size={16} className="mr-2 text-indigo-400" />
+              <span className="truncate">{task.entryId.clientName}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        {task.progress > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-gray-600">Progress</span>
+              <span className="font-medium text-gray-900">{task.progress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${task.progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
           <button
-            onClick={() => onView(task)}
-            className="flex-1 px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg transition-colors"
+            onClick={onView}
+            className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
           >
             View Details
+            <ChevronRight size={16} className="ml-1" />
           </button>
-          {task.status !== 'completed' && onUpdateStatus && (
-            <button
-              onClick={() => onUpdateStatus(task)}
-              className="flex-1 px-3 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors"
-            >
-              Update Status
-            </button>
-          )}
+          
+          <div className="flex items-center gap-2">
+            {onUpdateStatus && (
+              <button
+                onClick={onUpdateStatus}
+                className="text-sm bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-100"
+              >
+                Update
+              </button>
+            )}
+            
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="text-sm bg-gray-50 text-gray-600 px-3 py-1 rounded-lg hover:bg-gray-100"
+              >
+                Edit
+              </button>
+            )}
+
+            {hasNotificationIssues && onRetryNotifications && (
+              <button
+                onClick={onRetryNotifications}
+                className="text-sm bg-yellow-50 text-yellow-600 px-3 py-1 rounded-lg hover:bg-yellow-100"
+                title="Retry failed notifications"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

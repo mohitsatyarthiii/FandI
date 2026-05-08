@@ -5,7 +5,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Environment check
-const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET'];
+const requiredEnvVars = [
+  'MONGODB_URI',
+  'JWT_SECRET',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_WHATSAPP_FROM',
+  'TWILIO_SMS_FROM'
+];
 requiredEnvVars.forEach(varName => {
   if (!process.env[varName]) {
     console.error(`❌ Missing required environment variable: ${varName}`);

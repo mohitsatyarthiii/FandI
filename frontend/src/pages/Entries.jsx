@@ -77,28 +77,72 @@ const Entries = () => {
       setLoading(false);
     }
   };
-
-  const handleCreateEntry = async (e) => {
-    e.preventDefault();
-    setError('');
+// Entries.jsx - Only the handleCreateEntry function (rest same as before)
+const handleCreateEntry = async (e) => {
+  e.preventDefault();
+  setError('');
+  setSuccess('');
+  
+  try {
+    const entryData = {
+      enquiryType: formData.enquiryType,
+      clientName: formData.clientName.trim(),
+      clientPhone: formData.clientPhone.trim(), // Send as is, backend will clean
+      clientAddress: formData.clientAddress.trim(),
+      location: formData.location,
+      enquiryDescription: formData.enquiryDescription.trim(),
+      priority: formData.priority
+    };
     
-    try {
-      const response = await createEntryAPI(formData);
-      if (response.data.success) {
-        setSuccess('Entry created successfully!');
-        setShowAddModal(false);
-        setFormData({
-          clientName: '', clientPhone: '', clientEmail: '', clientAddress: '', 
-          clientCity: '', location: user.location, enquiryType: 'service',
-          enquiryDescription: '', priority: 'medium'
-        });
-        fetchEntries();
-        setTimeout(() => setSuccess(''), 3000);
-      }
-    } catch (error) {
+    // Add optional fields only if they have values
+    if (formData.clientEmail && formData.clientEmail.trim() !== '') {
+      entryData.clientEmail = formData.clientEmail.trim();
+    }
+    
+    if (formData.clientCity && formData.clientCity.trim() !== '') {
+      entryData.clientCity = formData.clientCity.trim();
+    }
+    
+    console.log('📤 Sending entry:', entryData);
+    
+    const response = await createEntryAPI(entryData);
+    
+    if (response.data.success) {
+      setSuccess('✅ Entry created successfully! SMS notification sent.');
+      setShowAddModal(false);
+      
+      // Reset form
+      setFormData({
+        clientName: '', 
+        clientPhone: '', 
+        clientEmail: '', 
+        clientAddress: '', 
+        clientCity: '', 
+        location: user?.location || 'mathura', 
+        enquiryType: 'service',
+        enquiryDescription: '', 
+        priority: 'medium'
+      });
+      
+      // Refresh entries list
+      fetchEntries();
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccess(''), 5000);
+    }
+  } catch (error) {
+    console.error('❌ Create entry error:', error);
+    
+    if (error.response?.data?.errors) {
+      const errorMessages = error.response.data.errors
+        .map(err => `${err.field || err.param}: ${err.msg || err.message}`)
+        .join(', ');
+      setError(`Validation failed: ${errorMessages}`);
+    } else {
       setError(error.response?.data?.message || 'Failed to create entry');
     }
-  };
+  }
+};
 
   const handleAddNote = async () => {
     if (!noteText.trim()) return;
@@ -319,15 +363,29 @@ const Entries = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                    <input
-                      type="text"
-                      value={formData.clientCity}
-                      onChange={(e) => setFormData({...formData, clientCity: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
+                 
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+  {isAdmin ? (
+    <select
+      required
+      value={formData.location}
+      onChange={(e) => setFormData({...formData, location: e.target.value})}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+    >
+      <option value="mathura">Mathura</option>
+      <option value="agra">Agra</option>
+      <option value="noida">Noida</option>
+    </select>
+  ) : (
+    <input
+      type="text"
+      value={formData.location}
+      disabled
+      className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg capitalize"
+    />
+  )}
+</div>
                 </div>
 
                 <div>

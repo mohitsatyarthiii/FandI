@@ -2,18 +2,18 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
+dotenv.config();
+
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import entryRoutes from './routes/entryRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
 
-dotenv.config();
-
 const app = express();
 
 // ✅ CORS fix - proper configuration
 app.use(cors({
-  origin: 'https://symphonious-entremet-a55135.netlify.app',
+  origin: 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']

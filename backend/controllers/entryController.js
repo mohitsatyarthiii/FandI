@@ -1,6 +1,109 @@
+// controllers/entryController.js
 import Entry from '../models/Entry.js';
 import Task from '../models/Task.js';
 import User from '../models/User.js';
+import twilioService from '../services/twilioService.js';
+
+// Helper function to clean phone number
+const cleanPhoneNumber = (phone) => {
+  if (!phone) return null;
+  // Remove all non-digits and leading zeros
+  let cleaned = phone.toString().replace(/\D/g, '');
+  cleaned = cleaned.replace(/^0+/, '');
+  
+  // Add +91 if it's a 10-digit Indian number
+  if (cleaned.length === 10) {
+    return `+91${cleaned}`;
+  }
+  return `+${cleaned}`;
+};
+
+// Background notification function
+const sendEntryNotifications = async (entry) => {
+  try {
+    const companyName = process.env.COMPANY_NAME || 'Fandi';
+    const cleanPhone = cleanPhoneNumber(entry.clientPhone);
+    
+    console.log('\n📱 ========== SENDING NOTIFICATIONS ==========');
+    console.log(`📞 Original: ${entry.clientPhone}`);
+    console.log(`📞 Cleaned: ${cleanPhone}`);
+    console.log(`👤 Client: ${entry.clientName}`);
+    console.log(`📍 Location: ${entry.location}`);
+    
+    // SMS Message
+    const smsMessage = `✨ Welcome to ${companyName}!
+
+Hi ${entry.clientName}, 👋  
+Thank you for your ${entry.enquiryType} enquiry. We’ve successfully received your request.
+
+Our team will review your details and get in touch with you shortly to assist you further.
+
+📞 For any additional queries, feel free to call or WhatsApp us anytime at: +91 93197 25916
+
+We look forward to assisting you!😊`;
+    
+    // WhatsApp Message  
+    const whatsappMessage = `*${companyName} - Enquiry Confirmation*\n\nDear ${entry.clientName},\n\nThank you for contacting us! Your enquiry has been received.\n\n*Enquiry Details:*\n• Type: ${entry.enquiryType}\n• Priority: ${entry.priority}\n• Location: ${entry.location}\n• Description: ${entry.enquiryDescription}\n\n*Tracking ID:* ${entry._id.toString().slice(-6)}\n\nWe will get back to you shortly.\n\nRegards,\nTeam ${companyName}`;
+
+    // ALWAYS send SMS first (more reliable)
+    console.log('\n📨 Sending SMS...');
+    const smsResult = await twilioService.sendSMS(cleanPhone, smsMessage);
+    
+    if (smsResult.success) {
+      console.log('✅ SMS SENT SUCCESSFULLY!');
+      console.log(`   SID: ${smsResult.sid}`);
+      
+      // Add success note to entry
+      await Entry.findByIdAndUpdate(entry._id, {
+        $push: {
+          notes: {
+            text: `✅ SMS sent to ${cleanPhone}`,
+            addedBy: null,
+            addedAt: new Date()
+          }
+        }
+      });
+      
+      // Try WhatsApp after SMS success
+      console.log('\n📱 Trying WhatsApp...');
+      const waResult = await twilioService.sendWhatsApp(cleanPhone, whatsappMessage);
+      
+      if (waResult.success) {
+        console.log('✅ WhatsApp also sent!');
+        await Entry.findByIdAndUpdate(entry._id, {
+          $push: {
+            notes: {
+              text: `✅ WhatsApp sent to ${cleanPhone}`,
+              addedBy: null,
+              addedAt: new Date()
+            }
+          }
+        });
+      } else {
+        console.log('ℹ️ WhatsApp skipped/failed (SMS was sent)');
+      }
+      
+    } else {
+      console.error('❌ SMS FAILED:', smsResult.error);
+      
+      // Log failure to entry
+      await Entry.findByIdAndUpdate(entry._id, {
+        $push: {
+          notes: {
+            text: `❌ SMS failed: ${smsResult.error}`,
+            addedBy: null,
+            addedAt: new Date()
+          }
+        }
+      });
+    }
+    
+    console.log('📱 ==========================================\n');
+    
+  } catch (error) {
+    console.error('💥 Notification error:', error);
+  }
+};
 
 // @desc    Create new entry (form submission)
 // @route   POST /api/entries
@@ -8,10 +111,21 @@ import User from '../models/User.js';
 export const createEntry = async (req, res) => {
   try {
     const entryData = req.body;
+    
+    console.log('\n📝 ========== NEW ENTRY ==========');
+    console.log('Data:', JSON.stringify(entryData, null, 2));
 
     // Create entry
     const entry = new Entry(entryData);
     await entry.save();
+    
+    console.log(`✅ Entry created: ${entry._id}`);
+    console.log('📝 ================================\n');
+
+    // Send notifications in background (don't await)
+    if (entry.clientPhone) {
+      sendEntryNotifications(entry);
+    }
 
     res.status(201).json({
       success: true,
@@ -20,10 +134,24 @@ export const createEntry = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create entry error:', error);
+    console.error('❌ Create entry error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.keys(error.errors).map(key => ({
+        field: key,
+        message: error.errors[key].message
+      }));
+      
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation failed', 
+        errors 
+      });
+    }
+    
     res.status(500).json({ 
       success: false, 
-      message: 'Server error while submitting entry' 
+      message: 'Server error: ' + error.message 
     });
   }
 };
@@ -48,18 +176,13 @@ export const getEntries = async (req, res) => {
     const userLocation = req.userLocation;
     const userId = req.userId;
 
-    // Build query
     let query = {};
 
-    // Role-based filtering
     if (userRole === 'admin') {
-      // Admin can see all entries
       if (location && location !== 'all') query.location = location;
     } else if (userRole === 'manager') {
-      // Manager can see entries from their location only
       query.location = userLocation;
     } else {
-      // Staff can see entries assigned to them or unassigned in their location
       query.location = userLocation;
       query.$or = [
         { assignedTo: userId },
@@ -68,22 +191,18 @@ export const getEntries = async (req, res) => {
       ];
     }
 
-    // Additional filters
     if (status) query.status = status;
     if (assignedTo) query.assignedTo = assignedTo;
     if (priority) query.priority = priority;
     
-    // Date range filter
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = new Date(startDate);
       if (endDate) query.createdAt.$lte = new Date(endDate);
     }
 
-    // Pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get entries with populated assignedTo
     const entries = await Entry.find(query)
       .populate('assignedTo', 'name email role')
       .populate('assignedBy', 'name email')
@@ -91,7 +210,6 @@ export const getEntries = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Get total count
     const total = await Entry.countDocuments(query);
 
     res.json({
@@ -134,11 +252,9 @@ export const getEntry = async (req, res) => {
       });
     }
 
-    // Check permission
     if (userRole === 'admin') {
       // Admin can see all
     } else if (userRole === 'manager') {
-      // Manager can see only their location
       if (entry.location !== userLocation) {
         return res.status(403).json({ 
           success: false, 
@@ -146,7 +262,6 @@ export const getEntry = async (req, res) => {
         });
       }
     } else {
-      // Staff can see only if assigned to them or in their location and unassigned
       if (entry.assignedTo && entry.assignedTo._id.toString() !== userId.toString()) {
         return res.status(403).json({ 
           success: false, 
@@ -185,7 +300,6 @@ export const updateEntry = async (req, res) => {
     const userRole = req.userRole;
     const userId = req.userId;
 
-    // Check permission
     if (userRole !== 'admin' && userRole !== 'manager') {
       return res.status(403).json({ 
         success: false, 
@@ -193,7 +307,6 @@ export const updateEntry = async (req, res) => {
       });
     }
 
-    // If manager, verify they're updating entry from their location
     if (userRole === 'manager') {
       const entry = await Entry.findById(entryId);
       if (!entry) {
@@ -212,7 +325,6 @@ export const updateEntry = async (req, res) => {
       }
     }
 
-    // If assigning to someone, set assignedBy and assignedAt
     if (updates.assignedTo) {
       updates.assignedBy = userId;
       updates.assignedAt = new Date();
@@ -267,7 +379,6 @@ export const addNote = async (req, res) => {
       });
     }
 
-    // Check permission
     const canAddNote = 
       userRole === 'admin' || 
       userRole === 'manager' ||
@@ -280,7 +391,6 @@ export const addNote = async (req, res) => {
       });
     }
 
-    // Add note
     entry.notes.push({
       text,
       addedBy: userId
@@ -317,7 +427,6 @@ export const getDashboardStats = async (req, res) => {
 
     let matchQuery = {};
 
-    // Role-based filtering
     if (userRole === 'admin') {
       // Admin sees all
     } else if (userRole === 'manager') {
@@ -331,7 +440,6 @@ export const getDashboardStats = async (req, res) => {
       ];
     }
 
-    // Get counts by status
     const statusCounts = await Entry.aggregate([
       { $match: matchQuery },
       { $group: {
@@ -340,7 +448,6 @@ export const getDashboardStats = async (req, res) => {
       }}
     ]);
 
-    // Get counts by location (for admin only)
     let locationCounts = [];
     if (userRole === 'admin') {
       locationCounts = await Entry.aggregate([
@@ -352,7 +459,6 @@ export const getDashboardStats = async (req, res) => {
       ]);
     }
 
-    // Get counts by priority
     const priorityCounts = await Entry.aggregate([
       { $match: matchQuery },
       { $group: {
@@ -361,13 +467,11 @@ export const getDashboardStats = async (req, res) => {
       }}
     ]);
 
-    // Get recent entries
     const recentEntries = await Entry.find(matchQuery)
       .populate('assignedTo', 'name')
       .sort({ createdAt: -1 })
       .limit(5);
 
-    // Format response
     const stats = {
       total: statusCounts.reduce((sum, item) => sum + item.count, 0),
       byStatus: Object.fromEntries(
@@ -406,7 +510,6 @@ export const convertToTask = async (req, res) => {
     const assignedBy = req.userId;
     const userRole = req.userRole;
 
-    // Check permission
     if (userRole !== 'admin' && userRole !== 'manager') {
       return res.status(403).json({ 
         success: false, 
@@ -422,7 +525,6 @@ export const convertToTask = async (req, res) => {
       });
     }
 
-    // If manager, verify they're assigning in their location
     if (userRole === 'manager') {
       const manager = await User.findById(assignedBy);
       if (entry.location !== manager.location) {
@@ -433,7 +535,6 @@ export const convertToTask = async (req, res) => {
       }
     }
 
-    // Create task from entry
     const task = new Task({
       title: `Follow up: ${entry.clientName} - ${entry.enquiryType}`,
       description: `Follow up for enquiry: ${entry.enquiryDescription}\n\nClient: ${entry.clientName}\nPhone: ${entry.clientPhone}\nAddress: ${entry.clientAddress}`,
@@ -442,20 +543,18 @@ export const convertToTask = async (req, res) => {
       assignedTo,
       assignedBy,
       priority: priority || entry.priority,
-      dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Default: 7 days from now
+      dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       category: 'follow-up'
     });
 
     await task.save();
 
-    // Update entry status
     entry.status = 'assigned';
     entry.assignedTo = assignedTo;
     entry.assignedBy = assignedBy;
     entry.assignedAt = new Date();
     await entry.save();
 
-    // Populate task details
     const populatedTask = await Task.findById(task._id)
       .populate('assignedTo', 'name email role')
       .populate('assignedBy', 'name email')

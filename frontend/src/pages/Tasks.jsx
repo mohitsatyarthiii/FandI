@@ -9,7 +9,8 @@ import {
   updateTaskStatusAPI,
   getMyTasksAPI,
   getUsersByLocationAPI,
-  getEntriesAPI
+  getEntriesAPI,
+  retryNotificationsAPI  // New API for retrying failed notifications
 } from '../api/axios';
 import {
   CheckSquare,
@@ -28,7 +29,13 @@ import {
   FileText,
   Briefcase,
   ChevronDown,
-  RefreshCw
+  RefreshCw,
+  Bell,
+  BellRing,
+  Phone,
+  MessageSquare,
+  Smartphone,
+  RotateCcw  // For retry button
 } from 'lucide-react';
 
 const Tasks = () => {
@@ -46,6 +53,7 @@ const Tasks = () => {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false); // New
   const [selectedTask, setSelectedTask] = useState(null);
   
   // Form states
@@ -81,6 +89,10 @@ const Tasks = () => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  
+  // Notification states
+  const [notificationFilter, setNotificationFilter] = useState('all'); // 'all', 'sent', 'failed', 'pending'
+  const [retryingNotifications, setRetryingNotifications] = useState(false);
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -139,64 +151,57 @@ const Tasks = () => {
     }
   };
 
-const fetchStaffForLocation = async (location) => {
-  try {
-    setLoadingStaff(true);
-    console.log('Fetching users for location:', location);
+  const fetchStaffForLocation = async (location) => {
+    try {
+      setLoadingStaff(true);
+      console.log('Fetching users for location:', location);
 
-    if (!location) return;
+      if (!location) return;
 
-    const response = await getUsersByLocationAPI(location);
-    const users = response.data.users || [];
+      const response = await getUsersByLocationAPI(location);
+      const users = response.data.users || [];
 
-    console.log("Users from API:", users);
+      console.log("Users from API:", users);
 
-    if (isAdmin) {
-      // ✅ ADMIN: managers + staff दिखाओ (role-wise)
-      const filtered = users.filter(u => u.isActive === true);
-      setStaffList(filtered);
-    } 
-    else if (isManager) {
-      // ✅ MANAGER: सिर्फ staff दिखाओ
-      const staff = users.filter(u => 
-        u.role === 'staff' && u.isActive === true
-      );
-      setStaffList(staff);
+      if (isAdmin) {
+        // ADMIN: Show all active users
+        const filtered = users.filter(u => u.isActive === true);
+        setStaffList(filtered);
+      } else if (isManager) {
+        // MANAGER: Show only staff
+        const staff = users.filter(u => u.role === 'staff' && u.isActive === true);
+        setStaffList(staff);
+      }
+
+    } catch (error) {
+      console.error('Fetch staff error:', error);
+      setError('Failed to fetch users list');
+    } finally {
+      setLoadingStaff(false);
     }
+  };
 
-  } catch (error) {
-    console.error('Fetch staff error:', error);
-    setError('Failed to fetch users list');
-  } finally {
-    setLoadingStaff(false);
-  }
-};
+  const fetchAllStaff = async () => {
+    try {
+      const promises = locations.map(loc => getUsersByLocationAPI(loc));
+      const responses = await Promise.all(promises);
 
+      const allUsers = responses.flatMap(res =>
+        res.data.users?.filter(u => u.isActive === true) || []
+      );
 
-const fetchAllStaff = async () => {
-  try {
-    const promises = locations.map(loc => getUsersByLocationAPI(loc));
-    const responses = await Promise.all(promises);
+      console.log("All active users:", allUsers);
+      setAllStaffList(allUsers);
 
-    const allUsers = responses.flatMap(res =>
-      res.data.users?.filter(u => u.isActive === true) || []
-    );
-
-    console.log("All active users:", allUsers);
-    setAllStaffList(allUsers);
-
-  } catch (error) {
-    console.error('Fetch all users error:', error);
-  }
-};
-
+    } catch (error) {
+      console.error('Fetch all users error:', error);
+    }
+  };
 
   const fetchEntries = async () => {
     try {
       setLoadingEntries(true);
-      const response = await getEntriesAPI({ 
-        limit: 50 
-      });
+      const response = await getEntriesAPI({ limit: 50 });
       console.log('Entries API response:', response.data.entries?.length);
       setEntriesList(response.data.entries || []);
     } catch (error) {
@@ -232,11 +237,11 @@ const fetchAllStaff = async () => {
       const response = await createTaskAPI(taskData);
       
       if (response.data.success) {
-        setSuccess('Task created successfully!');
+        setSuccess('Task created successfully! Notifications sent to staff and customer.');
         setShowCreateModal(false);
         resetForm();
         fetchTasks();
-        setTimeout(() => setSuccess(''), 3000);
+        setTimeout(() => setSuccess(''), 5000);
       }
     } catch (error) {
       console.error('Create task error:', error);
@@ -281,17 +286,34 @@ const fetchAllStaff = async () => {
     }
   };
 
+  // New: Handle retry notifications
+  const handleRetryNotifications = async (taskId) => {
+    try {
+      setRetryingNotifications(true);
+      const response = await retryNotificationsAPI(taskId);
+      
+      if (response.data.success) {
+        setSuccess('Notifications retried successfully!');
+        fetchTasks(); // Refresh to get updated notification status
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (error) {
+      console.error('Retry notifications error:', error);
+      setError(error.response?.data?.message || 'Failed to retry notifications');
+    } finally {
+      setRetryingNotifications(false);
+    }
+  };
+
   const handleEntrySelect = async (entryId) => {
     if (!entryId) return;
     
     try {
-      // Find entry from entriesList
       const entry = entriesList.find(e => e._id === entryId);
       if (!entry) return;
       
       setSelectedEntry(entry);
       
-      // Auto-fill form from entry
       setFormData({
         ...formData,
         title: `Follow-up: ${entry.clientName} - ${entry.enquiryType}`,
@@ -302,7 +324,6 @@ const fetchAllStaff = async () => {
         category: 'follow-up'
       });
       
-      // Location ke hisaab se staff fetch karo
       await fetchStaffForLocation(entry.location);
       
     } catch (error) {
@@ -330,25 +351,23 @@ const fetchAllStaff = async () => {
 
   // ============= HELPER FUNCTIONS =============
 
- const getFilteredStaff = () => {
-  if (isAdmin) {
-    if (selectedLocation !== 'all') {
-      return staffList;       // location-wise users
+  const getFilteredStaff = () => {
+    if (isAdmin) {
+      if (selectedLocation !== 'all') {
+        return staffList;
+      }
+      return allStaffList;
     }
-    return allStaffList;      // सभी locations के users
-  }
+    if (isManager) {
+      return staffList;
+    }
+    return [];
+  };
 
-  if (isManager) {
-    return staffList;         // सिर्फ अपनी location के staff
-  }
+  const getStaffDisplayName = (user) => {
+    return `${user.name} - ${user.role} (${user.location})`;
+  };
 
-  return [];
-};
-
-
-const getStaffDisplayName = (user) => {
-  return `${user.name} - ${user.role} (${user.location})`;
-};
   const getStatusCount = (status) => {
     return tasks.filter(t => t.status === status).length;
   };
@@ -357,17 +376,60 @@ const getStaffDisplayName = (user) => {
     return tasks.filter(t => t.priority === priority).length;
   };
 
-  const filteredTasks = tasks.filter(task => 
+  // New: Get notification stats
+  const getNotificationStats = () => {
+    const stats = {
+      total: 0,
+      sent: 0,
+      failed: 0,
+      pending: 0
+    };
+
+    tasks.forEach(task => {
+      if (task.notifications) {
+        stats.total += task.notifications.length;
+        task.notifications.forEach(n => {
+          if (n.status === 'sent') stats.sent++;
+          else if (n.status === 'failed') stats.failed++;
+          else stats.pending++;
+        });
+      }
+    });
+
+    return stats;
+  };
+
+  // New: Filter tasks by notification status
+  const filterTasksByNotification = (tasks) => {
+    if (notificationFilter === 'all') return tasks;
+    
+    return tasks.filter(task => {
+      if (!task.notifications) return false;
+      
+      if (notificationFilter === 'sent') {
+        return task.notifications.some(n => n.status === 'sent');
+      } else if (notificationFilter === 'failed') {
+        return task.notifications.some(n => n.status === 'failed');
+      } else if (notificationFilter === 'pending') {
+        return !task.notifications.length || task.notifications.every(n => n.status === 'pending');
+      }
+      return true;
+    });
+  };
+
+  const filteredTasks = filterTasksByNotification(tasks.filter(task => 
     task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.assignedTo?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     task.location?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ));
+
+  const notificationStats = getNotificationStats();
 
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header - same as before */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -378,7 +440,7 @@ const getStaffDisplayName = (user) => {
               {isStaff 
                 ? 'View and update your assigned tasks' 
                 : isAdmin 
-                  ? 'Manage tasks across all locations'
+                  ? 'Manage tasks across all locations with WhatsApp & SMS notifications'
                   : `Manage tasks in ${user?.location} location`}
             </p>
           </div>
@@ -417,7 +479,7 @@ const getStaffDisplayName = (user) => {
           </div>
         )}
 
-        {/* Stats Cards - same as before */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <p className="text-sm text-gray-600">Total Tasks</p>
@@ -440,6 +502,34 @@ const getStaffDisplayName = (user) => {
                 <p className="text-2xl font-bold text-gray-900 mt-1">{getPriorityCount(priority)}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Notification Stats - New Section */}
+        {(isAdmin || isManager) && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-100 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BellRing className="h-5 w-5 text-blue-600" />
+              <h3 className="font-semibold text-gray-900">Notification Status</h3>
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="bg-white rounded-lg p-3">
+                <p className="text-xs text-gray-500">Total</p>
+                <p className="text-xl font-bold text-gray-900">{notificationStats.total}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3">
+                <p className="text-xs text-gray-500">Sent</p>
+                <p className="text-xl font-bold text-green-600">{notificationStats.sent}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3">
+                <p className="text-xs text-gray-500">Failed</p>
+                <p className="text-xl font-bold text-red-600">{notificationStats.failed}</p>
+              </div>
+              <div className="bg-white rounded-lg p-3">
+                <p className="text-xs text-gray-500">Pending</p>
+                <p className="text-xl font-bold text-yellow-600">{notificationStats.pending}</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -510,6 +600,20 @@ const getStaffDisplayName = (user) => {
                   ))}
                 </select>
               )}
+
+              {/* New: Notification Filter */}
+              {(isAdmin || isManager) && (
+                <select
+                  value={notificationFilter}
+                  onChange={(e) => setNotificationFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="all">All Notifications</option>
+                  <option value="sent">Sent</option>
+                  <option value="failed">Failed</option>
+                  <option value="pending">Pending</option>
+                </select>
+              )}
             </div>
           </div>
         </div>
@@ -564,12 +668,17 @@ const getStaffDisplayName = (user) => {
                   });
                   setShowUpdateModal(true);
                 } : null}
+                onViewNotifications={(isAdmin || isManager) ? () => {
+                  setSelectedTask(task);
+                  setShowNotificationsModal(true);
+                } : null}
+                onRetryNotifications={(isAdmin || isManager) ? () => handleRetryNotifications(task._id) : null}
               />
             ))}
           </div>
         )}
 
-        {/* ============= CREATE TASK MODAL - FIXED DROPDOWNS ============= */}
+        {/* ============= CREATE TASK MODAL ============= */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
@@ -605,6 +714,17 @@ const getStaffDisplayName = (user) => {
                     ))}
                   </select>
                   {loadingEntries && <p className="text-xs text-indigo-600 mt-2">Loading entries...</p>}
+                </div>
+
+                {/* Notification Info */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <Bell size={18} />
+                    <p className="text-sm font-medium">WhatsApp & SMS notifications will be sent automatically</p>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-1 ml-6">
+                    Staff will get customer details, customer will get staff details
+                  </p>
                 </div>
 
                 {/* Task Title */}
@@ -687,7 +807,7 @@ const getStaffDisplayName = (user) => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Assign To - Staff Dropdown - FIXED */}
+                  {/* Assign To - Staff Dropdown */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Assign To <span className="text-red-500">*</span>
@@ -713,20 +833,15 @@ const getStaffDisplayName = (user) => {
                       </div>
                     )}
                     {!loadingStaff && getFilteredStaff().length === 0 && formData.location && (
-  <p className="text-xs text-red-500 mt-2">
-    No active users found in {formData.location}. 
-  </p>
-)}
+                      <p className="text-xs text-red-500 mt-2">
+                        No active users found in {formData.location}. 
+                      </p>
+                    )}
                     <p className="text-xs text-gray-500 mt-1">
                       {isAdmin 
                         ? (selectedLocation !== 'all' ? `Showing staff from ${selectedLocation}` : 'Showing staff from all locations')
                         : `Showing staff from ${user?.location}`}
                     </p>
-                    {isAdmin && selectedLocation === 'all' && (
-                      <p className="text-xs text-indigo-600 mt-1">
-                        Tip: Select a specific location to filter staff
-                      </p>
-                    )}
                   </div>
 
                   {/* Priority */}
@@ -791,7 +906,7 @@ const getStaffDisplayName = (user) => {
                     className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={loadingStaff || !formData.location || getFilteredStaff().length === 0}
                   >
-                    Create Task
+                    Create Task & Send Notifications
                   </button>
                   <button
                     type="button"
@@ -809,7 +924,7 @@ const getStaffDisplayName = (user) => {
           </div>
         )}
 
-        {/* Task Details Modal */}
+        {/* ============= TASK DETAILS MODAL ============= */}
         {showDetailsModal && selectedTask && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -869,6 +984,9 @@ const getStaffDisplayName = (user) => {
                   <div className="p-3 bg-gray-50 rounded-lg">
                     <p className="text-xs text-gray-500 mb-1">Assigned To</p>
                     <p className="text-sm font-medium text-gray-900">{selectedTask.assignedTo?.name}</p>
+                    {selectedTask.assignedTo?.phone && (
+                      <p className="text-xs text-gray-500 mt-1">📞 {selectedTask.assignedTo.phone}</p>
+                    )}
                   </div>
                   <div className="p-3 bg-gray-50 rounded-lg">
                     <p className="text-xs text-gray-500 mb-1">Assigned By</p>
@@ -889,6 +1007,19 @@ const getStaffDisplayName = (user) => {
                   </div>
                 </div>
 
+                {/* Customer Details (if entry exists) */}
+                {selectedTask.entryId && (
+                  <div className="border border-indigo-100 rounded-lg p-4 bg-indigo-50">
+                    <p className="text-sm font-medium text-indigo-700 mb-2">Customer Details</p>
+                    <div className="space-y-2">
+                      <p className="text-sm"><span className="font-medium">Name:</span> {selectedTask.entryId.clientName}</p>
+                      <p className="text-sm"><span className="font-medium">Phone:</span> {selectedTask.entryId.clientPhone}</p>
+                      <p className="text-sm"><span className="font-medium">Address:</span> {selectedTask.entryId.clientAddress}</p>
+                      <p className="text-sm"><span className="font-medium">Enquiry:</span> {selectedTask.entryId.enquiryType}</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Progress */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -902,6 +1033,146 @@ const getStaffDisplayName = (user) => {
                     />
                   </div>
                 </div>
+
+                {/* Notification Status Section */}
+                {selectedTask.notificationStatus && (
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Bell size={18} className="text-gray-600" />
+                        <p className="text-sm font-medium text-gray-700">Notification Status</p>
+                      </div>
+                      {(isAdmin || isManager) && (
+                        <button
+                          onClick={() => handleRetryNotifications(selectedTask._id)}
+                          disabled={retryingNotifications}
+                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                        >
+                          <RotateCcw size={14} />
+                          Retry Failed
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Staff Notifications */}
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-2">👤 Staff ({selectedTask.assignedTo?.name})</p>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <MessageSquare size={14} className="text-green-600" />
+                              <span className="text-xs">WhatsApp</span>
+                            </div>
+                            {selectedTask.notificationStatus.staff?.whatsapp ? (
+                              <span className="text-xs text-green-600 flex items-center gap-1">
+                                ✅ Sent
+                                {selectedTask.notificationStatus.staff.whatsappSentAt && (
+                                  <span className="text-gray-400">
+                                    {new Date(selectedTask.notificationStatus.staff.whatsappSentAt).toLocaleTimeString()}
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-yellow-600">⏳ Pending</span>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <Smartphone size={14} className="text-blue-600" />
+                              <span className="text-xs">SMS</span>
+                            </div>
+                            {selectedTask.notificationStatus.staff?.sms ? (
+                              <span className="text-xs text-green-600 flex items-center gap-1">
+                                ✅ Sent
+                                {selectedTask.notificationStatus.staff.smsSentAt && (
+                                  <span className="text-gray-400">
+                                    {new Date(selectedTask.notificationStatus.staff.smsSentAt).toLocaleTimeString()}
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-yellow-600">⏳ Pending</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Customer Notifications */}
+                      {selectedTask.entryId && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-2">🏠 Customer ({selectedTask.entryId.clientName})</p>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1">
+                                <MessageSquare size={14} className="text-green-600" />
+                                <span className="text-xs">WhatsApp</span>
+                              </div>
+                              {selectedTask.notificationStatus.customer?.whatsapp ? (
+                                <span className="text-xs text-green-600 flex items-center gap-1">
+                                  ✅ Sent
+                                  {selectedTask.notificationStatus.customer.whatsappSentAt && (
+                                    <span className="text-gray-400">
+                                      {new Date(selectedTask.notificationStatus.customer.whatsappSentAt).toLocaleTimeString()}
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-yellow-600">⏳ Pending</span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1">
+                                <Smartphone size={14} className="text-blue-600" />
+                                <span className="text-xs">SMS</span>
+                              </div>
+                              {selectedTask.notificationStatus.customer?.sms ? (
+                                <span className="text-xs text-green-600 flex items-center gap-1">
+                                  ✅ Sent
+                                  {selectedTask.notificationStatus.customer.smsSentAt && (
+                                    <span className="text-gray-400">
+                                      {new Date(selectedTask.notificationStatus.customer.smsSentAt).toLocaleTimeString()}
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-yellow-600">⏳ Pending</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Recent Notifications Log */}
+                    {selectedTask.notifications && selectedTask.notifications.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <p className="text-xs font-medium text-gray-500 mb-2">Recent Activity</p>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {selectedTask.notifications.slice(-3).map((notif, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1">
+                                {notif.type === 'whatsapp' ? (
+                                  <MessageSquare size={12} className="text-green-600" />
+                                ) : notif.type === 'sms' ? (
+                                  <Smartphone size={12} className="text-blue-600" />
+                                ) : (
+                                  <AlertCircle size={12} className="text-red-600" />
+                                )}
+                                <span className="text-gray-600">
+                                  {notif.type} to {notif.sentTo}
+                                </span>
+                              </div>
+                              <span className={notif.status === 'sent' ? 'text-green-600' : 'text-red-600'}>
+                                {notif.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Updates/Notes */}
                 {selectedTask.updates && selectedTask.updates.length > 0 && (
@@ -964,28 +1235,43 @@ const getStaffDisplayName = (user) => {
                     </button>
                   )}
                   {(isAdmin || isManager) && (
-                    <button
-                      onClick={() => {
-                        setShowDetailsModal(false);
-                        setFormData({
-                          title: selectedTask.title,
-                          description: selectedTask.description,
-                          assignedTo: selectedTask.assignedTo?._id || '',
-                          location: selectedTask.location,
-                          priority: selectedTask.priority,
-                          dueDate: selectedTask.dueDate?.split('T')[0] || '',
-                          category: selectedTask.category,
-                          entryId: selectedTask.entryId?._id || '',
-                          startDate: selectedTask.startDate?.split('T')[0] || '',
-                          progress: selectedTask.progress,
-                          status: selectedTask.status
-                        });
-                        setShowUpdateModal(true);
-                      }}
-                      className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700"
-                    >
-                      Edit Task
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowDetailsModal(false);
+                          setFormData({
+                            title: selectedTask.title,
+                            description: selectedTask.description,
+                            assignedTo: selectedTask.assignedTo?._id || '',
+                            location: selectedTask.location,
+                            priority: selectedTask.priority,
+                            dueDate: selectedTask.dueDate?.split('T')[0] || '',
+                            category: selectedTask.category,
+                            entryId: selectedTask.entryId?._id || '',
+                            startDate: selectedTask.startDate?.split('T')[0] || '',
+                            progress: selectedTask.progress,
+                            status: selectedTask.status
+                          });
+                          setShowUpdateModal(true);
+                        }}
+                        className="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700"
+                      >
+                        Edit Task
+                      </button>
+                      {selectedTask.notificationStatus && 
+                       (!selectedTask.notificationStatus.staff?.whatsapp || 
+                        !selectedTask.notificationStatus.staff?.sms ||
+                        !selectedTask.notificationStatus.customer?.whatsapp ||
+                        !selectedTask.notificationStatus.customer?.sms) && (
+                        <button
+                          onClick={() => handleRetryNotifications(selectedTask._id)}
+                          disabled={retryingNotifications}
+                          className="flex-1 bg-yellow-600 text-white py-2 px-4 rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+                        >
+                          Retry Notifications
+                        </button>
+                      )}
+                    </>
                   )}
                   <button
                     onClick={() => setShowDetailsModal(false)}

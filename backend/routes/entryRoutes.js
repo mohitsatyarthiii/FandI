@@ -1,5 +1,6 @@
+// routes/entryRoutes.js
 import express from 'express';
-import { body } from 'express-validator';
+import { body, validationResult } from 'express-validator'; // IMPORTANT: Add validationResult here
 import {
   createEntry,
   getEntries,
@@ -10,7 +11,7 @@ import {
   convertToTask
 } from '../controllers/entryController.js';
 import { authenticate, authorize } from '../middlewares/authMiddleware.js';
-import { validate } from '../utils/validators.js';
+import { validate } from '../utils/validators.js'; // Use the imported validate instead
 
 const router = express.Router();
 
@@ -19,17 +20,42 @@ const router = express.Router();
 // @access  Public
 router.post('/',
   [
-    body('enquiryType').isIn(['service', 'product', 'complaint', 'general', 'other']),
-    body('clientName').trim().notEmpty(),
-    body('clientPhone').trim().notEmpty(),
-    body('clientEmail').optional().isEmail().normalizeEmail(),
-    body('clientAddress').trim().notEmpty(),
-    body('clientCity').optional().trim(),
-    body('location').isIn(['mathura', 'agra', 'noida']),
-    body('enquiryDescription').trim().notEmpty(),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent'])
+    body('enquiryType')
+      .isIn(['service', 'product', 'complaint', 'general', 'other'])
+      .withMessage('Invalid enquiry type'),
+    body('clientName')
+      .trim()
+      .notEmpty()
+      .withMessage('Client name is required'),
+    body('clientPhone')
+      .trim()
+      .notEmpty()
+      .withMessage('Client phone is required'),
+    body('clientEmail')
+      .optional({ values: 'falsy' })
+      .isEmail()
+      .withMessage('Invalid email format')
+      .normalizeEmail(),
+    body('clientAddress')
+      .trim()
+      .notEmpty()
+      .withMessage('Client address is required'),
+    body('clientCity')
+      .optional()
+      .trim(),
+    body('location')
+      .isIn(['mathura', 'agra', 'noida'])
+      .withMessage('Invalid location'),
+    body('enquiryDescription')
+      .trim()
+      .notEmpty()
+      .withMessage('Enquiry description is required'),
+    body('priority')
+      .optional()
+      .isIn(['low', 'medium', 'high', 'urgent'])
+      .withMessage('Invalid priority')
   ],
-  validate,
+  validate, // Use the imported validate middleware
   createEntry
 );
 
@@ -66,10 +92,21 @@ router.get('/:id',
 router.put('/:id',
   authorize(['admin', 'manager']),
   [
-    body('status').optional().isIn(['new', 'assigned', 'in-progress', 'completed', 'cancelled']),
-    body('assignedTo').optional().isMongoId(),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
-    body('enquiryDescription').optional().trim()
+    body('status')
+      .optional()
+      .isIn(['new', 'assigned', 'in-progress', 'completed', 'cancelled'])
+      .withMessage('Invalid status'),
+    body('assignedTo')
+      .optional()
+      .isMongoId()
+      .withMessage('Invalid assigned user ID'),
+    body('priority')
+      .optional()
+      .isIn(['low', 'medium', 'high', 'urgent'])
+      .withMessage('Invalid priority'),
+    body('enquiryDescription')
+      .optional()
+      .trim()
   ],
   validate,
   updateEntry
@@ -81,7 +118,10 @@ router.put('/:id',
 router.post('/:id/notes',
   authorize(['admin', 'manager', 'staff']),
   [
-    body('text').trim().notEmpty()
+    body('text')
+      .trim()
+      .notEmpty()
+      .withMessage('Note text is required')
   ],
   validate,
   addNote
@@ -93,9 +133,17 @@ router.post('/:id/notes',
 router.post('/:id/convert-to-task',
   authorize(['admin', 'manager']),
   [
-    body('assignedTo').isMongoId(),
-    body('dueDate').optional().isISO8601(),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'urgent'])
+    body('assignedTo')
+      .isMongoId()
+      .withMessage('Assigned user ID is required and must be valid'),
+    body('dueDate')
+      .optional()
+      .isISO8601()
+      .withMessage('Invalid date format'),
+    body('priority')
+      .optional()
+      .isIn(['low', 'medium', 'high', 'urgent'])
+      .withMessage('Invalid priority')
   ],
   validate,
   convertToTask
