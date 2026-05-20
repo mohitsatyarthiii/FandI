@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://31.97.228.243.nip.io/api';
 
 console.log('🌐 API URL:', API_URL);
 
