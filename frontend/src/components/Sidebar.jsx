@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'; // ✅ Import NavLink
+import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
@@ -10,7 +10,8 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
-  Briefcase
+  Briefcase,
+  Send  // ✅ Add Send icon
 } from 'lucide-react';
 
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
@@ -19,31 +20,38 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const navigation = [
     {
       name: 'Dashboard',
-      href: '/dashboard',      // ✅ Route path
+      href: '/dashboard',
       icon: LayoutDashboard,
       roles: ['admin', 'manager', 'staff']
     },
     {
       name: 'Users',
-      href: '/users',         // ✅ Route path
+      href: '/users',
       icon: Users,
       roles: ['admin', 'manager']
     },
     {
       name: 'Entries',
-      href: '/entries',       // ✅ Route path
+      href: '/entries',
       icon: FileText,
       roles: ['admin', 'manager', 'staff']
     },
     {
       name: 'Tasks',
-      href: '/tasks',         // ✅ Route path
+      href: '/tasks',
       icon: CheckSquare,
+      roles: ['admin', 'manager', 'staff']
+    },
+    // ✅ Add Follow-ups navigation item
+    {
+      name: 'Follow-ups',
+      href: '/followups',
+      icon: Send,
       roles: ['admin', 'manager', 'staff']
     },
     {
       name: 'Profile',
-      href: '/profile',       // ✅ Route path
+      href: '/profile',
       icon: UserCircle,
       roles: ['admin', 'manager', 'staff']
     }
@@ -70,7 +78,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         </button>
       </div>
 
-      {/* Navigation - ✅ Yahan NavLink use karo */}
+      {/* Navigation */}
       <nav className="p-3 space-y-1">
         {filteredNav.map((item) => (
           <NavLink

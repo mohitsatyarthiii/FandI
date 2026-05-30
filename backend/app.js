@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import entryRoutes from './routes/entryRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
+import followUpRoutes from './routes/followUpRoutes.js';
 
 const app = express();
 
@@ -36,6 +37,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/entries', entryRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use(
+  '/api/followups',
+  followUpRoutes
+);
 
 // 404 handler
 app.use('', (req, res) => {

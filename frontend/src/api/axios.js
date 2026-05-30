@@ -121,5 +121,40 @@ export const retryNotificationsAPI = (taskId) => {
 };
 
 
+/* =========================
+   FOLLOW UPS
+========================= */
+
+export const sendFollowUpAPI = (data) =>
+  axiosInstance.post('/followups/send', data);
+
+export const getFollowUpHistoryAPI = (params) =>
+  axiosInstance.get('/followups/history', { params });
+
+export const getClientHistoryAPI = (entryId) =>
+  axiosInstance.get(`/followups/client/${entryId}`);
+
+export const getFollowUpStatsAPI = () =>
+  axiosInstance.get('/followups/stats');
+
+export const retryFollowUpAPI = (id) =>
+  axiosInstance.post(`/followups/retry/${id}`);
+
+/* =========================
+   TEMPLATES
+========================= */
+
+export const getTemplatesAPI = () =>
+  axiosInstance.get('/followups/templates');
+
+export const createTemplateAPI = (data) =>
+  axiosInstance.post('/followups/templates', data);
+
+export const updateTemplateAPI = (id, data) =>
+  axiosInstance.put(`/followups/templates/${id}`, data);
+
+export const deleteTemplateAPI = (id) =>
+  axiosInstance.delete(`/followups/templates/${id}`);
+
 
 export default axiosInstance;

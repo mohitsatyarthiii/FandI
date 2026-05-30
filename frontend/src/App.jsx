@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Entries from './pages/Entries';
 import Tasks from './pages/Tasks';
+import FollowUps from './pages/FollowUps'; // ✅ Import FollowUps page
 import Profile from './pages/Profile';
 
 
@@ -31,8 +32,10 @@ function AppContent() {
       <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
       <Route path="/entries" element={<ProtectedRoute><Entries /></ProtectedRoute>} />
       <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+      <Route path="/followups" element={<ProtectedRoute><FollowUps /></ProtectedRoute>} /> {/* ✅ Added Follow-ups route */}
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/" element={<Navigate to="/dashboard" />} />
+      
     </Routes>
   );
 }
